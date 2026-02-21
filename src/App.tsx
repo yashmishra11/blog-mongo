@@ -20,7 +20,7 @@ function App() {
   const handleSubmit = async () => {
   const postWithDate = { ...newPost, date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }
   
-  const res = await fetch('http://localhost:5000/api/posts', {
+  const res = await fetch('https://blog-mongo-58k7.onrender.com/api/posts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(postWithDate)
