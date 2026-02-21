@@ -33,7 +33,7 @@ function App() {
 
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/posts')
+    fetch('https://blog-mongo-58k7.onrender.com/api/posts')
       .then((res) => res.json())
       .then((data) => {
         setPosts(data)
