@@ -78,6 +78,47 @@ router.post('/', async (req: Request, res: Response) => {
   }
 })
 
+// PUT (update) a post by ID
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    if (typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid post ID format' })
+    }
+
+    const { title, description, category } = req.body
+
+    if (
+      (title !== undefined && (typeof title !== 'string' || !title.trim())) ||
+      (description !== undefined && (typeof description !== 'string' || !description.trim())) ||
+      (category !== undefined && (typeof category !== 'string' || !category.trim()))
+    ) {
+      return res.status(400).json({
+        message: 'Updated fields cannot be empty strings'
+      })
+    }
+
+    const updates: Record<string, string> = {}
+    if (title) updates.title = title.trim()
+    if (description) updates.description = description.trim()
+    if (category) updates.category = category.trim()
+
+    const updated = await Post.findByIdAndUpdate(id, updates, {
+      returnDocument: 'after',
+      runValidators: true
+    })
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Post not found' })
+    }
+
+    res.json(updated)
+  } catch (err) {
+    console.error('Error updating post:', err)
+    res.status(500).json({ message: 'Server error while updating post' })
+  }
+})
+
 // DELETE a post by ID
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
@@ -97,4 +138,4 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 })
 
-export default router
+export default router

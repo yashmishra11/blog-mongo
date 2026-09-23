@@ -22,7 +22,8 @@ import {
   CircularProgress,
   Container,
   Divider,
-  Paper
+  Paper,
+  InputAdornment
 } from '@mui/material'
 
 export type BlogPost = {
@@ -75,11 +76,15 @@ function App() {
   const [submitting, setSubmitting] = useState(false)
   const [page, setPage] = useState<'home' | 'categories' | 'about'>('home')
   const [selectedCategory, setSelectedCategory] = useState<string>('All')
+  const [searchQuery, setSearchQuery] = useState('')
   const [backendOffline, setBackendOffline] = useState(false)
 
   // Dialog & Form states
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editingPost, setEditingPost] = useState<BlogPost | null>(null)
   const [readPostModal, setReadPostModal] = useState<BlogPost | null>(null)
+  const [subscribeModalOpen, setSubscribeModalOpen] = useState(false)
+  const [subscriberEmail, setSubscriberEmail] = useState('')
   const [newPost, setNewPost] = useState({
     title: '',
     description: '',
@@ -253,18 +258,99 @@ function App() {
     }, 50)
   }
 
-  const handleSubscribe = () => {
-    setSnackbar({
-      open: true,
-      message: '✨ Thank you for subscribing to TheBlog newsletter!',
-      severity: 'success'
-    })
+  const handleUpdatePost = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingPost) return
+    if (!editingPost.title.trim() || !editingPost.description.trim() || !editingPost.category) {
+      setSnackbar({
+        open: true,
+        message: 'Please fill in all fields before saving.',
+        severity: 'warning'
+      })
+      return
+    }
+
+    setSubmitting(true)
+    if (editingPost._id.startsWith('default-') || editingPost._id.startsWith('local-')) {
+      setPosts((prev) => prev.map((p) => (p._id === editingPost._id ? editingPost : p)))
+      setSnackbar({
+        open: true,
+        message: 'Post updated in preview mode.',
+        severity: 'info'
+      })
+      setEditingPost(null)
+      setSubmitting(false)
+      return
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/${editingPost._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editingPost.title.trim(),
+          description: editingPost.description.trim(),
+          category: editingPost.category
+        })
+      })
+
+      if (res.ok) {
+        const updated: BlogPost = await res.json()
+        setPosts((prev) => prev.map((p) => (p._id === updated._id ? updated : p)))
+        setSnackbar({ open: true, message: '✨ Post updated successfully!', severity: 'success' })
+        setEditingPost(null)
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        setSnackbar({
+          open: true,
+          message: errData.message || 'Failed to update post',
+          severity: 'error'
+        })
+      }
+    } catch {
+      setSnackbar({
+        open: true,
+        message: 'Network error while updating post',
+        severity: 'error'
+      })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  // Filter posts on client if using fallback data or to ensure strict match
-  const displayedPosts = selectedCategory === 'All'
-    ? posts
-    : posts.filter((p) => p.category.toLowerCase() === selectedCategory.toLowerCase())
+  const handleOpenSubscribe = () => {
+    setSubscribeModalOpen(true)
+  }
+
+  const handleSubscribeSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!subscriberEmail.trim() || !subscriberEmail.includes('@')) {
+      setSnackbar({
+        open: true,
+        message: 'Please enter a valid email address.',
+        severity: 'warning'
+      })
+      return
+    }
+    setSubscribeModalOpen(false)
+    setSnackbar({
+      open: true,
+      message: `🎉 Subscribed ${subscriberEmail} to TheBlog newsletter!`,
+      severity: 'success'
+    })
+    setSubscriberEmail('')
+  }
+
+  // Filter posts on client by selected category and active search query
+  const displayedPosts = posts.filter((p) => {
+    const matchesCategory =
+      selectedCategory === 'All' || p.category.toLowerCase() === selectedCategory.toLowerCase()
+    const matchesSearch =
+      !searchQuery.trim() ||
+      p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.description.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesCategory && matchesSearch
+  })
 
   return (
     <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -308,7 +394,7 @@ function App() {
             <Button
               variant="outlined"
               size="small"
-              onClick={handleSubscribe}
+              onClick={handleOpenSubscribe}
               sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
             >
               Subscribe
@@ -379,21 +465,46 @@ function App() {
             {/* UNIFIED LATEST POSTS SECTION */}
             <Box id="posts-section" sx={{ maxWidth: 1100, mx: 'auto', px: 3, py: 8 }}>
               {/* Section Header & Actions */}
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mb: 4 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'stretch', sm: 'center' }, flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mb: 4 }}>
                 <Box>
                   <Typography variant="h5" fontWeight="bold" color="text.primary">
                     {selectedCategory === 'All' ? 'Latest Posts' : `${selectedCategory} Articles`}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Showing {displayedPosts.length} article{displayedPosts.length === 1 ? '' : 's'}
+                    {searchQuery && ` matching "${searchQuery}"`}
                   </Typography>
                 </Box>
 
                 <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <TextField
+                    size="small"
+                    placeholder="Search articles..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    sx={{ minWidth: { xs: '100%', sm: 260 } }}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                          </svg>
+                        </InputAdornment>
+                      ),
+                      endAdornment: searchQuery ? (
+                        <InputAdornment position="end">
+                          <IconButton size="small" onClick={() => setSearchQuery('')} aria-label="clear search">
+                            <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>✕</Typography>
+                          </IconButton>
+                        </InputAdornment>
+                      ) : null
+                    }}
+                  />
                   <Button
                     variant="contained"
                     onClick={() => setShowAddModal(true)}
-                    sx={{ px: 2.5 }}
+                    sx={{ px: 2.5, whiteSpace: 'nowrap' }}
                   >
                     + New Post
                   </Button>
@@ -423,14 +534,24 @@ function App() {
               ) : displayedPosts.length === 0 ? (
                 <Paper sx={{ p: 6, textAlign: 'center', bgcolor: 'grey.50' }}>
                   <Typography variant="h6" fontWeight="bold" color="text.secondary" gutterBottom>
-                    No posts found in {selectedCategory}
+                    {searchQuery
+                      ? `No articles match "${searchQuery}"`
+                      : `No posts found in ${selectedCategory}`}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                    Be the first to share an article in this category!
+                    {searchQuery
+                      ? 'Try searching with different keywords or clearing your search.'
+                      : 'Be the first to share an article in this category!'}
                   </Typography>
-                  <Button variant="contained" onClick={() => setShowAddModal(true)}>
-                    + Create First Post
-                  </Button>
+                  {searchQuery ? (
+                    <Button variant="outlined" onClick={() => setSearchQuery('')}>
+                      Clear Search
+                    </Button>
+                  ) : (
+                    <Button variant="contained" onClick={() => setShowAddModal(true)}>
+                      + Create First Post
+                    </Button>
+                  )}
                 </Paper>
               ) : (
                 <Box
@@ -461,18 +582,33 @@ function App() {
                             clickable
                             onClick={() => setSelectedCategory(post.category)}
                           />
-                          <Tooltip title="Delete post">
-                            <IconButton
-                              size="small"
-                              color="default"
-                              onClick={() => handleDelete(post._id, post.title)}
-                              aria-label="delete post"
-                            >
-                              <Typography variant="caption" sx={{ color: 'text.secondary', '&:hover': { color: 'error.main' } }}>
-                                ✕
-                              </Typography>
-                            </IconButton>
-                          </Tooltip>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Tooltip title="Edit post">
+                              <IconButton
+                                size="small"
+                                onClick={() => setEditingPost(post)}
+                                aria-label="edit post"
+                                sx={{ color: 'text.secondary', '&:hover': { color: 'primary.main', bgcolor: 'primary.50' } }}
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                                </svg>
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete post">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleDelete(post._id, post.title)}
+                                aria-label="delete post"
+                                sx={{ color: 'text.secondary', '&:hover': { color: 'error.main', bgcolor: '#fee2e2' } }}
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="3 6 5 6 21 6" />
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                </svg>
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
                         </Box>
 
                         <Typography variant="h6" fontWeight="700" gutterBottom sx={{ lineHeight: 1.3 }}>
@@ -697,6 +833,110 @@ function App() {
             </DialogActions>
           </>
         )}
+      </Dialog>
+
+      {/* ==================== EDIT POST DIALOG ==================== */}
+      <Dialog
+        open={Boolean(editingPost)}
+        onClose={() => !submitting && setEditingPost(null)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
+          Edit Article
+        </DialogTitle>
+        {editingPost && (
+          <form onSubmit={handleUpdatePost}>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+              <TextField
+                label="Article Title"
+                value={editingPost.title}
+                onChange={(e) => setEditingPost({ ...editingPost, title: e.target.value })}
+                required
+                fullWidth
+                autoFocus
+              />
+
+              <TextField
+                select
+                label="Category"
+                value={editingPost.category}
+                onChange={(e) => setEditingPost({ ...editingPost, category: e.target.value })}
+                required
+                fullWidth
+              >
+                {CATEGORIES.filter((c) => c !== 'All').map((cat) => (
+                  <MenuItem key={cat} value={cat}>
+                    {cat}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <TextField
+                label="Article Content / Summary"
+                value={editingPost.description}
+                onChange={(e) => setEditingPost({ ...editingPost, description: e.target.value })}
+                required
+                multiline
+                rows={5}
+                fullWidth
+              />
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 3 }}>
+              <Button onClick={() => setEditingPost(null)} disabled={submitting}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="contained"
+                disabled={submitting || !editingPost.title.trim() || !editingPost.description.trim()}
+              >
+                {submitting ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </DialogActions>
+          </form>
+        )}
+      </Dialog>
+
+      {/* ==================== SUBSCRIBE DIALOG ==================== */}
+      <Dialog
+        open={subscribeModalOpen}
+        onClose={() => setSubscribeModalOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700, pb: 0.5 }}>
+          Join TheBlog Newsletter
+        </DialogTitle>
+        <form onSubmit={handleSubscribeSubmit}>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Get weekly curated articles on full-stack architecture, React 19, TypeScript, and MongoDB.
+            </Typography>
+            <TextField
+              type="email"
+              label="Email Address"
+              placeholder="you@domain.com"
+              value={subscriberEmail}
+              onChange={(e) => setSubscriberEmail(e.target.value)}
+              required
+              fullWidth
+              autoFocus
+            />
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 3 }}>
+            <Button onClick={() => setSubscribeModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={!subscriberEmail.trim() || !subscriberEmail.includes('@')}
+            >
+              Subscribe
+            </Button>
+          </DialogActions>
+        </form>
       </Dialog>
 
       {/* ==================== NOTIFICATIONS ==================== */}
