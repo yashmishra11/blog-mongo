@@ -43,12 +43,13 @@ A modern full-stack blog platform built with React, TypeScript, Material UI, Exp
    npm run seed
    ```
 
-4. **Start the backend server:**
+4. **Start the application (Full Stack with one command):**
    ```bash
-   npm run backend
+   npm run dev:all
+   ```
+   *Or start them in separate terminals if preferred:*
+   ```bash
+   npm run backend  # Starts Express on http://localhost:5000
+   npm run dev      # Starts Vite React dev server on http://localhost:5173
    ```
 
-5. **Start the frontend application:**
-   ```bash
-   npm run dev
-   ```

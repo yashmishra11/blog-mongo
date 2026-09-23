@@ -28,18 +28,54 @@ app.use('/api/posts', postRoutes)
 const mongoUri = process.env.MONGO_URI
 
 if (!mongoUri) {
-  console.error('\n⚠️  [server] Missing MONGO_URI in environment variables!')
-  console.error('Please configure MONGO_URI in your .env file.\n')
-  process.exit(1)
+  console.warn('\n⚠️  [server] Missing MONGO_URI in environment variables!')
+  console.warn('Backend server running in offline/demo mode without MongoDB connection.\n')
 }
 
-// Connect to MongoDB then start server
-mongoose
-  .connect(mongoUri)
-  .then(() => {
+// Connect to MongoDB asynchronously with auto-retry
+const connectDB = async () => {
+  if (!mongoUri) {
+    console.error('\n⚠️  [server] Missing MONGO_URI in environment variables!')
+    console.error('Please configure MONGO_URI in your .env file.\n')
+    return
+  }
+
+  try {
+    await mongoose.connect(mongoUri)
     console.log(' Connected to MongoDB')
-    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`))
+  } catch (err) {
+    console.error('❌ MongoDB initial connection error:', err)
+    console.log(' Retrying MongoDB connection in 5 seconds...')
+    setTimeout(connectDB, 5000)
+  }
+}
+
+mongoose.connection.on('disconnected', () => {
+  console.warn('⚠️  MongoDB disconnected')
+})
+
+mongoose.connection.on('reconnected', () => {
+  console.log('🔄 MongoDB reconnected')
+})
+
+// Start server and begin database connection
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`)
+  connectDB()
+})
+
+// Graceful shutdown
+const handleShutdown = async () => {
+  console.log('\nClosing server and database connections...')
+  try {
+    await mongoose.connection.close()
+  } catch {
+    // Ignore error on close
+  }
+  server.close(() => {
+    process.exit(0)
   })
-  .catch((err) => {
-    console.error('❌ MongoDB connection error:', err)
-  })
+}
+
+process.on('SIGINT', handleShutdown)
+process.on('SIGTERM', handleShutdown)

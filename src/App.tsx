@@ -66,8 +66,8 @@ const DEFAULT_POSTS: BlogPost[] = [
   }
 ]
 
-// Determine API base URL with environment variable support and sensible local fallback
-const API_URL = (import.meta.env.VITE_API_URL as string) || 'http://localhost:5000/api/posts'
+// Determine API base URL with environment variable support and Vite dev proxy fallback
+const API_URL = (import.meta.env.VITE_API_URL as string) || '/api/posts'
 
 function App() {
   const [posts, setPosts] = useState<BlogPost[]>([])
@@ -94,19 +94,14 @@ function App() {
   })
 
   // Fetch posts safely with fallback to sample data if backend is offline
-  const fetchPosts = async (cat?: string) => {
+  const fetchPosts = async () => {
     try {
       setLoading(true)
-      const targetCategory = cat !== undefined ? cat : selectedCategory
-      const queryUrl = targetCategory && targetCategory !== 'All'
-        ? `${API_URL}?category=${encodeURIComponent(targetCategory)}`
-        : API_URL
-
       // Timeout after 4 seconds so user is never frozen waiting on cold starts
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 4000)
 
-      const res = await fetch(queryUrl, { signal: controller.signal })
+      const res = await fetch(API_URL, { signal: controller.signal })
       clearTimeout(timeoutId)
 
       if (!res.ok) {
@@ -115,7 +110,7 @@ function App() {
 
       const data = await res.json()
       if (Array.isArray(data)) {
-        setPosts(data.length > 0 ? data : (targetCategory === 'All' ? DEFAULT_POSTS : []))
+        setPosts(data)
         setBackendOffline(false)
       } else {
         throw new Error('API response is not an array')
@@ -123,18 +118,15 @@ function App() {
     } catch (err) {
       console.warn('Backend unavailable or timed out, using fallback demo data:', err)
       setBackendOffline(true)
-      const filtered = selectedCategory === 'All'
-        ? DEFAULT_POSTS
-        : DEFAULT_POSTS.filter((p) => p.category.toLowerCase() === selectedCategory.toLowerCase())
-      setPosts(filtered)
+      setPosts(DEFAULT_POSTS)
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchPosts(selectedCategory)
-  }, [selectedCategory])
+    fetchPosts()
+  }, [])
 
   const handlePublish = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -178,18 +170,20 @@ function App() {
         setPosts((prev) => [saved, ...prev])
         setSnackbar({ open: true, message: '🎉 Post published successfully to MongoDB!', severity: 'success' })
       } else {
-        throw new Error('Failed to save to backend')
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.message || 'Failed to save to backend')
       }
-    } catch (err) {
+    } catch (err: unknown) {
       // Offline fallback: save locally so user can immediately test UI flow
       const localPost: BlogPost = {
         _id: 'local-' + Date.now(),
         ...payload
       }
       setPosts((prev) => [localPost, ...prev])
+      const errorMsg = err instanceof Error ? err.message : 'Backend offline'
       setSnackbar({
         open: true,
-        message: 'Post created locally (Backend offline. Connect MongoDB to persist).',
+        message: `Post created locally (${errorMsg}). Connect MongoDB to persist.`,
         severity: 'info'
       })
     } finally {
@@ -200,31 +194,52 @@ function App() {
   }
 
   const handleDelete = async (postId: string, postTitle: string) => {
-    try {
-      const res = await fetch(`${API_URL}/${postId}`, { method: 'DELETE' })
-      if (!res.ok) {
-        // Continue and remove locally for demo mode
-        console.warn('Backend delete error, removing from local state')
-      }
-    } catch (err) {
-      console.warn('Backend offline, deleting locally')
+    // If it's a fallback demo post or locally generated post, delete locally without server error
+    if (postId.startsWith('default-') || postId.startsWith('local-')) {
+      setPosts((prev) => prev.filter((p) => p._id !== postId))
+      setSnackbar({
+        open: true,
+        message: `Removed "${postTitle}" from preview`,
+        severity: 'info'
+      })
+      return
     }
 
-    setPosts((prev) => prev.filter((p) => p._id !== postId))
-    setSnackbar({
-      open: true,
-      message: `Deleted "${postTitle}"`,
-      severity: 'info'
-    })
+    try {
+      const res = await fetch(`${API_URL}/${postId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setPosts((prev) => prev.filter((p) => p._id !== postId))
+        setSnackbar({
+          open: true,
+          message: `Deleted "${postTitle}" successfully`,
+          severity: 'success'
+        })
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        setSnackbar({
+          open: true,
+          message: errData.message || 'Server error while deleting post',
+          severity: 'error'
+        })
+      }
+    } catch {
+      setSnackbar({
+        open: true,
+        message: 'Network error: could not connect to server to delete post',
+        severity: 'error'
+      })
+    }
   }
 
   const handleCategorySelect = (cat: string) => {
     setSelectedCategory(cat)
     setPage('home')
-    const section = document.getElementById('posts-section')
-    if (section) {
-      section.scrollIntoView({ behavior: 'smooth' })
-    }
+    setTimeout(() => {
+      const section = document.getElementById('posts-section')
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth' })
+      }
+    }, 50)
   }
 
   const handleStartReading = () => {

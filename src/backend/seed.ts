@@ -22,6 +22,18 @@ const posts = [
     description: "How to build clean, professional interfaces quickly using MUI components in React.",
     category: "MUI",
     date: "Feb 18, 2026"
+  },
+  {
+    title: "Data Modeling with MongoDB & Mongoose",
+    description: "Design flexible schemas and build performant backend APIs using Mongoose and Express.",
+    category: "MongoDB",
+    date: "Feb 20, 2026"
+  },
+  {
+    title: "Building Resilient REST APIs with Node.js",
+    description: "Learn how to build error-tolerant Express services with graceful shutdowns and connection health checks.",
+    category: "Node.js",
+    date: "Feb 22, 2026"
   }
 ]
 
